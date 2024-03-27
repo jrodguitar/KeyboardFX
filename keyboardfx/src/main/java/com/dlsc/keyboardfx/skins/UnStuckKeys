@@ -1,0 +1,29 @@
+package com.dlsc.keyboardfx.skins;
+
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+public class UnStuckKeys {
+    public final static MouseEvent MOUSE_RELEASE_EVENT;
+    private final static ScheduledExecutorService scheduler;
+    static {
+        MOUSE_RELEASE_EVENT = new MouseEvent(MouseEvent.MOUSE_RELEASED,0, 0, 0, 0,
+                MouseButton.PRIMARY, 1, false, false, false, false,
+                false, false, false, false, false, false, null
+        );
+
+        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r);
+            thread.setDaemon(true); // Set the thread as a daemon
+            return thread;
+        });
+    }
+
+    public static void scheduleKeyRelease(Runnable task) {
+        scheduler.scheduleAtFixedRate(task, 0, 1200, TimeUnit.MILLISECONDS);
+    }
+}
