@@ -3,16 +3,22 @@ package com.dlsc.keyboardfx.skins;
 import com.dlsc.keyboardfx.Keyboard.Key;
 import com.dlsc.keyboardfx.KeyboardView;
 import com.dlsc.keyboardfx.KeyboardView.Mode;
-import javafx.application.Platform;
-import javafx.beans.binding.Bindings;
-import javafx.geometry.Pos;
-import javafx.scene.Node;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.VBox;
 
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
+import javafx.event.Event;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.VBox;
+
+import static com.dlsc.keyboardfx.skins.UnStuckKeys.MOUSE_RELEASE_EVENT;
 
 public class KeyView extends KeyViewBase<Key> {
     private static final Logger LOG = Logger.getLogger(KeyView.class.getName());
@@ -20,9 +26,12 @@ public class KeyView extends KeyViewBase<Key> {
     private final VBox vBox = new VBox();
     private String text;
 
+    private final KeyView that;
+
     public KeyView(KeyboardView keyboardView, Key key) {
         super(keyboardView, key);
 
+        that = this;
         vBox.setFillWidth(true);
         vBox.setAlignment(Pos.CENTER);
 
@@ -34,15 +43,8 @@ public class KeyView extends KeyViewBase<Key> {
 
         updateLabels();
 
-        setOnTouchPressed(touchEvent -> setPressed(true));
-
-        pressedProperty().addListener((observable, oldValue, newValue) -> {
-            if (newValue) {
-                handlePressed();
-            } else {
-                handleReleased();
-            }
-        });
+        setOnMousePressed(this::handlePressed);
+        setOnMouseReleased(this::handleReleased);
     }
 
     public KeyView(KeyboardView keyboardView, Key key, String text) {
@@ -55,7 +57,7 @@ public class KeyView extends KeyViewBase<Key> {
 
     private void showPopOver() {
         List<String> list = null;
-        Key key = getKey();
+        final Key key = getKey();
         switch (getKeyboardView().getMode()) {
             case STANDARD:
                 if (key.getCharacters().size() > 1) {
@@ -114,7 +116,7 @@ public class KeyView extends KeyViewBase<Key> {
                     }
 
                     if (!key.getCharacters().isEmpty()) {
-                        String text = key.getCharacters().get(0);
+                        final String text = key.getCharacters().get(0);
                         vBox.getChildren().add(createLabel(text));
                     }
                     break;
@@ -137,7 +139,6 @@ public class KeyView extends KeyViewBase<Key> {
     }
 
     class ShowExtraKeysThread extends Thread {
-
         private boolean running = true;
 
         public ShowExtraKeysThread() {
@@ -159,12 +160,20 @@ public class KeyView extends KeyViewBase<Key> {
             } catch (InterruptedException e) {
                 LOG.log(Level.SEVERE, "interrupted exception", e);
             }
+
+            UnStuckKeys.scheduleKeyRelease(() -> {
+                if (showExtraKeysThread != null && running) {
+                    // Simulate a mouse release event programmatically
+                    Platform.runLater(() -> Event.fireEvent(that, MOUSE_RELEASE_EVENT));
+                    LOG.info("auto key release");
+                }
+            });
         }
     }
 
     private ShowExtraKeysThread showExtraKeysThread;
 
-    private void handlePressed() {
+    private void handlePressed(MouseEvent evt) {
         if (text == null) {
             if (showExtraKeysThread != null) {
                 showExtraKeysThread.cancel();
@@ -175,7 +184,7 @@ public class KeyView extends KeyViewBase<Key> {
         }
     }
 
-    private void handleReleased() {
+    private void handleReleased(MouseEvent evt) {
         if (showExtraKeysThread != null) {
             showExtraKeysThread.cancel();
         }
@@ -185,21 +194,38 @@ public class KeyView extends KeyViewBase<Key> {
             return;
         }
 
-        boolean shiftDown = getKeyboardView().getMode().equals(Mode.SHIFT) || getKeyboardView().getMode().equals(Mode.CAPS);
+        final boolean shiftDown = getKeyboardView().getMode().equals(Mode.SHIFT) || getKeyboardView().getMode().equals(Mode.CAPS);
+
+        String character = getCharacter();
 
         KeyEvent ke = new KeyEvent(
                 KeyEvent.KEY_TYPED,
-                text == null ? getCharacter() : text,
-                text == null ? getCharacter() : text,
+                text == null ? character : text,
+                text == null ? character : text,
                 null,
                 shiftDown,
                 false,
                 false,
                 false);
 
-        Node focusOwner = getKeyboardView().getScene().getFocusOwner();
+        final Node focusOwner = getKeyboardView().getScene().getFocusOwner();
         if (focusOwner != null) {
-            focusOwner.fireEvent(ke);
+            if(isPinyinSupported()){
+                char c = character.charAt(0);
+                if(Character.isLetter(c)){
+                    ROBOT.keyType(KeyCode.getKeyCode(character.toUpperCase()));
+                } else if (Character.isDigit(c)){
+                    ROBOT.keyType(KeyCode.getKeyCode(character));
+                } else if(c == '+') {
+                    ROBOT.keyType(KeyCode.PLUS);
+                }else if(c == '-') {
+                    ROBOT.keyType(KeyCode.MINUS);
+                }else {
+                    focusOwner.fireEvent(ke);
+                }
+            } else {
+                focusOwner.fireEvent(ke);
+            }
         }
 
         if (text != null) {
